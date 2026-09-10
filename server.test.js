@@ -74,6 +74,9 @@ test('invalid input, cross-origin writes and empty scrapes return useful errors'
   const {server} = setup(t,{collector:async()=>[]});
   assert.equal((await request(server,'/api/jobs',{method:'POST',body:'{bad'})).status,400);
   assert.equal((await request(server,'/api/jobs',{method:'POST',body:{url:row.url},origin:'https://evil.example'})).status,403);
+  // Behind a TLS-terminating proxy (Render, etc.) the browser's Origin is https:// while this
+  // process only ever sees plain http:// — same host must still be accepted, not rejected as foreign.
+  assert.equal((await request(server,'/api/jobs',{method:'POST',body:{url:'https://example.com/collection/https-origin'},origin:'https://localhost:3000'})).status,202);
   const started = await request(server,'/api/jobs',{method:'POST',body:{url:'https://example.com/collection/empty'}});
   await new Promise(resolve=>setImmediate(resolve));
   const job = (await request(server,'/api/jobs/' + started.json().id)).json(); assert.equal(job.phase,'error'); assert.match(job.error,/No product data found/);

@@ -18,6 +18,9 @@ function createApp({ root = __dirname, collector, scraper, engine } = {}) {
   const queue=createQueue({root,datasets,engine});
   const jobs=queue.jobs;
   const json = (res, status, data) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(data)); };
+  // Compare host only: behind a TLS-terminating proxy (Render, etc.) the Origin header is https:// while
+  // this process only ever sees plain http://, so a scheme-inclusive comparison rejects every same-origin request.
+  const foreignOrigin = req => { try { return req.headers.origin && new URL(req.headers.origin).host !== req.headers.host; } catch { return true; } };
   const summary = ({ rows, ...d }) => {
     const withImages = rows.filter(r => r.images.length);
     const coverIndex = [...d.id].reduce((n,c) => n + c.charCodeAt(0), 0) % Math.max(1,withImages.length);
@@ -50,7 +53,7 @@ function createApp({ root = __dirname, collector, scraper, engine } = {}) {
         const [, , , id, action]=url.pathname.split('/'), job=jobs.get(id);
         if(!job)return json(res,404,{error:'Run not found'});
         if(req.method==='POST' && action==='cancel') {
-          if(req.headers.origin && req.headers.origin!==`http://${req.headers.host}`)return json(res,403,{error:'Requests must come from this app.'});
+          if(foreignOrigin(req))return json(res,403,{error:'Requests must come from this app.'});
           return json(res,200,queue.cancel(id));
         }
         if(req.method==='GET' && action==='export') {
@@ -66,7 +69,7 @@ function createApp({ root = __dirname, collector, scraper, engine } = {}) {
         if(req.method==='GET')return json(res,200,job);
       }
       if (req.method === 'POST' && url.pathname === '/api/jobs') {
-        if(req.headers.origin && req.headers.origin!==`http://${req.headers.host}`)return json(res,403,{error:'Requests must come from this app.'});
+        if(foreignOrigin(req))return json(res,403,{error:'Requests must come from this app.'});
         let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>10*1024*1024)return json(res,413,{error:'This batch exceeds 10 MB. Split it into smaller batches.'});}
         let values;
         try{
